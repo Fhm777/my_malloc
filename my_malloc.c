@@ -5,7 +5,6 @@
 
 /*
   TODO
-  - splitting free chunks into smaller chunks as per requirement
   - best fit for finding required free chunks
   - coalescing free chunks
   - alignment of data pointer returned by malloc
@@ -41,7 +40,7 @@ struct chunk {
     uint32_t debug;
 };
 
-struct chunk* chunk_head = NULL;
+internal struct chunk* chunk_head = NULL;
 
 internal
 struct chunk* request_memory(size_t size)
@@ -63,24 +62,44 @@ struct chunk* request_memory(size_t size)
     return chunk_info;
 }
 
-void* my_malloc(size_t size)
+internal
+struct chunk* find_free_chunk(size_t size)
 {
-    void* data_ptr = NULL;
-
     struct chunk* current = chunk_head;
     while (current != NULL
            && (size > current->size
                || !current->free))
         current = current->next;
 
-    if (current == NULL) {
+    return current;
+}
+
+void* my_malloc(size_t size)
+{
+    void* data_ptr = NULL;
+
+    struct chunk* free_chunk = find_free_chunk(size);
+
+    if (free_chunk == NULL) {
         data_ptr = (void *)request_memory(size);
     }
     else {
-        current->size = size;
-        current->debug = 0x55555555;
-        current->free = false;
-        data_ptr = (void *)(current + 1);
+        size_t size_diff = free_chunk->size - size;
+
+        free_chunk->size = size;
+        free_chunk->debug = 0x55555555;
+        free_chunk->free = false;
+        data_ptr = (void *)(free_chunk + 1);
+
+        if (size_diff >= sizeof(struct chunk)) {
+            struct chunk* new_chunk = (struct chunk *)(data_ptr + size);
+            new_chunk->size = size_diff - sizeof(struct chunk);
+            new_chunk->debug = 0x11111111;
+            new_chunk->free = true;
+
+            new_chunk->next = free_chunk->next;
+            free_chunk->next = new_chunk;
+        }
     }
 
     return data_ptr;
@@ -102,17 +121,24 @@ int main()
 {
     void* ptr = my_malloc(23);
     struct chunk* ptr_chunk = (struct chunk *)ptr - 1;
-    DEBUG_PRINT(ptr, ptr_chunk);
+    /* DEBUG_PRINT(ptr, ptr_chunk); */
 
-    ptr = my_malloc(23);
+    ptr = my_malloc(55);
     ptr_chunk = ((struct chunk *)ptr) - 1;
-    DEBUG_PRINT(ptr, ptr_chunk);
+    /* DEBUG_PRINT(ptr, ptr_chunk); */
 
     free(ptr);
 
     ptr = my_malloc(23);
     ptr_chunk = ((struct chunk *)ptr) - 1;
-    DEBUG_PRINT(ptr, ptr_chunk);
+    /* DEBUG_PRINT(ptr, ptr_chunk); */
+
+    struct chunk* current = chunk_head;
+    while (current != NULL) {
+        void* data_ptr = (void *)(current + 1);
+        DEBUG_PRINT(data_ptr, current);
+        current = current->next;
+    }
 
     return 0;
 }
