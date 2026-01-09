@@ -1,13 +1,14 @@
 #include <stdio.h>
 #include <stdint.h>
+#include <stddef.h>
 #include <unistd.h>
 #include <assert.h>
 
 /*
   TODO
-  - best fit for finding required free chunks
+  - align even with split free chunks
   - coalescing free chunks
-  - alignment of data pointer returned by malloc
+  - best fit for finding required free chunks
   - using mmap for requesting memory
   - calloc, realloc implementation
   - thread safety
@@ -30,6 +31,7 @@
             printf("Addr_chunk: 0x%x\n\n", (p_chunk));                  \
         }                                                               \
     } while(0)
+#define ALIGNMENT alignof(max_align_t)
 
 struct chunk {
     bool free;
@@ -45,8 +47,14 @@ internal struct chunk* chunk_head = NULL;
 internal
 struct chunk* request_memory(size_t size)
 {
-    void* memory = (struct chunk *)sbrk(size + sizeof(struct chunk));
-    struct chunk* chunk_info = (struct chunk *)memory;
+    void* prog_break = sbrk(0);
+    prog_break += sizeof(struct chunk);
+    size_t align = (ALIGNMENT - (size_t)prog_break) % ALIGNMENT;
+
+    void* memory = sbrk(size + sizeof(struct chunk) + align);
+    if (memory == (void *)-1)
+        return NULL;
+    struct chunk* chunk_info = (struct chunk *)(memory + align);
 
     chunk_info->free = false;
     chunk_info->next = chunk_head;
@@ -54,10 +62,6 @@ struct chunk* request_memory(size_t size)
     chunk_info->debug = 0x77777777;
 
     chunk_head = chunk_info;
-    ++chunk_info;
-
-    if (memory == (void *)-1)
-        return NULL;
 
     return chunk_info;
 }
@@ -81,7 +85,9 @@ void* my_malloc(size_t size)
     struct chunk* free_chunk = find_free_chunk(size);
 
     if (free_chunk == NULL) {
-        data_ptr = (void *)request_memory(size);
+        struct chunk* chunk_info = request_memory(size);
+        if (chunk_info == NULL) return NULL;
+        return (void *)(chunk_info + 1);
     }
     else {
         size_t size_diff = free_chunk->size - size;
@@ -119,19 +125,14 @@ void free(void* ptr)
 
 int main()
 {
-    void* ptr = my_malloc(23);
-    struct chunk* ptr_chunk = (struct chunk *)ptr - 1;
-    /* DEBUG_PRINT(ptr, ptr_chunk); */
+    void* ptr1 = my_malloc(1);
+    void* ptr2 = my_malloc(2);
+    void* ptr3 = my_malloc(3);
+    void* ptr4 = my_malloc(4);
+    void* ptr5 = my_malloc(5);
 
-    ptr = my_malloc(55);
-    ptr_chunk = ((struct chunk *)ptr) - 1;
-    /* DEBUG_PRINT(ptr, ptr_chunk); */
-
-    free(ptr);
-
-    ptr = my_malloc(23);
-    ptr_chunk = ((struct chunk *)ptr) - 1;
-    /* DEBUG_PRINT(ptr, ptr_chunk); */
+    free(ptr3);
+    free(ptr2);
 
     struct chunk* current = chunk_head;
     while (current != NULL) {
