@@ -21,7 +21,7 @@
             printf("size: %zu\n", (p_chunk)->size);                     \
             printf("prev: 0x%x\n", (p_chunk)->prev);                    \
             printf("next: 0x%x\n", (p_chunk)->next);                    \
-            printf("free: %s\n", (p_chunk)->free ? "true" : "false"); \
+            printf("free: %s\n", (p_chunk)->free ? "true" : "false");   \
             printf("debug: 0x%x\n\n", (p_chunk)->debug);                \
         }                                                               \
         else {                                                          \
@@ -31,6 +31,29 @@
         }                                                               \
     } while(0)
 #define ALIGNMENT alignof(max_align_t)
+
+#define ll_insert_after(at, new_node)                           \
+    do {                                                        \
+        (new_node)->next = (at)->next;                          \
+        (new_node)->prev = at;                                  \
+        if ((at)->next != NULL) (at)->next->prev = new_node;    \
+        (at)->next = new_node;                                  \
+    } while(0)
+
+#define ll_insert_before(at, new_node)                          \
+    do {                                                        \
+        (new_node)->next = at;                                  \
+        (new_node)->prev = (at)->prev;                          \
+        if ((at)->prev != NULL) (at)->prev->next = new_node;    \
+        (at)->prev = new_node;                                  \
+    } while(0)
+
+
+#define ll_delete(node)                                                 \
+    do {                                                                \
+        if ((node)->prev != NULL) (node)->prev->next = (node)->next;    \
+        if ((node)->next != NULL) (node)->next->prev = (node)->prev;    \
+    } while(0)
 
 struct chunk {
     bool free;
@@ -43,30 +66,6 @@ struct chunk {
 };
 
 internal struct chunk* chunk_head = NULL;
-
-internal
-void ll_insert_after(struct chunk* at, struct chunk* new_node)
-{
-    new_node->next = at->next;
-    new_node->prev = at;
-    at->next = new_node;
-}
-
-internal
-void ll_insert_before(struct chunk* at, struct chunk* new_node)
-{
-    new_node->next = at;
-    new_node->prev = at->prev;
-    at->prev = new_node;
-}
-
-
-internal
-void ll_delete(struct chunk* node)
-{
-    if (node->prev != NULL) node->prev->next = node->next;
-    if (node->next != NULL) node->next->prev = node->prev;
-}
 
 internal
 struct chunk* request_memory(size_t size)
@@ -108,7 +107,11 @@ internal
 void split_free_chunk(struct chunk* free_chunk, size_t size)
 {
     size_t size_diff = free_chunk->size - size;
+
     if (size_diff <= 0) return;
+
+    free_chunk->size = size;
+    free_chunk->debug = 0x12121212;
 
     size_t min_size = sizeof(struct chunk);
     void* chunk_end = (void*)(free_chunk + 1) + size;
@@ -123,10 +126,9 @@ void split_free_chunk(struct chunk* free_chunk, size_t size)
     new_free_chunk->size = size_diff - min_size;
     new_free_chunk->debug = 0x23232323;
 
-    free_chunk->size = size;
-    free_chunk->debug = 0x12121212;
+    ll_insert_before(free_chunk, new_free_chunk);
 
-    ll_insert_after(free_chunk, new_free_chunk);
+    if (free_chunk == chunk_head) chunk_head = new_free_chunk;
 }
 
 void* my_malloc(size_t size)
@@ -186,7 +188,6 @@ void my_free(void* ptr)
     chunk_info->debug = 0x12345678;
 }
 
-// TODO test coalescing free chunks
 int main()
 {
     void* ptr1 = my_malloc(1);
@@ -201,12 +202,27 @@ int main()
     my_free(ptr1);
     my_free(ptr2);
 
+    void* ptr6 = my_malloc(8);
+
     struct chunk* current = chunk_head;
     while (current != NULL) {
         void* data_ptr = (void *)(current + 1);
         DEBUG_PRINT(data_ptr, current);
         current = current->next;
     }
+
+
+    void* ptr7 = my_malloc(6);
+
+    printf("\nAFTER MALLOC\n\n");
+
+    current = chunk_head;
+    while (current != NULL) {
+        void* data_ptr = (void *)(current + 1);
+        DEBUG_PRINT(data_ptr, current);
+        current = current->next;
+    }
+
 
     return 0;
 }
