@@ -42,15 +42,6 @@
         (at)->next = new_node;                                  \
     } while(0)
 
-#define ll_insert_before(at, new_node)                          \
-    do {                                                        \
-        (new_node)->next = at;                                  \
-        (new_node)->prev = (at)->prev;                          \
-        if ((at)->prev != NULL) (at)->prev->next = new_node;    \
-        (at)->prev = new_node;                                  \
-    } while(0)
-
-
 #define ll_delete(node)                                                 \
     do {                                                                \
         if ((node)->prev != NULL) (node)->prev->next = (node)->next;    \
