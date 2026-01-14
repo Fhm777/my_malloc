@@ -8,7 +8,7 @@
   TODO
   - best fit for finding required free chunks
   - using mmap for requesting memory
-  - calloc, realloc implementation
+  - test calloc, realloc implementation
   - thread safety
 */
 
@@ -144,6 +144,19 @@ void* my_malloc(size_t size)
     return data_ptr;
 }
 
+void* my_calloc(size_t n, size_t elem_size)
+{
+    size_t size = n*elem_size;
+    void* ptr = my_malloc(size);
+
+    for (unsigned char* u8_ptr = (unsigned char *)ptr;
+         size > 0;
+         ++u8_ptr, --size)
+        *u8_ptr = 0;
+
+    return ptr;
+}
+
 void coalesce_free(struct chunk* next, struct chunk* curr)
 {
     if (next != chunk_list_tail) {
@@ -164,7 +177,7 @@ void my_free(void* ptr)
     if (ptr == NULL) return;
 
     struct chunk* chunk_info = (struct chunk *)ptr - 1;
-    assert(!chunk_info->free);
+    assert(!chunk_info->free && "Double free");
 
     if (chunk_info->next != NULL
         && chunk_info->next->free) {
@@ -179,6 +192,24 @@ void my_free(void* ptr)
 
     chunk_info->free = true;
     chunk_info->debug = 0x12345678;
+}
+
+void* my_realloc(void* ptr, size_t size)
+{
+    void* new_ptr = my_malloc(size);
+
+    struct chunk* old_chunk = (struct chunk *)ptr - 1;
+    size_t prev_size = old_chunk->size;
+
+    unsigned char* u8_ptr = ptr;
+    unsigned char* u8_new_ptr = new_ptr;
+    for (unsigned char* u8_ptr = (unsigned char *)ptr;
+         prev_size > 0;
+         ++u8_ptr, ++new_ptr, --prev_size)
+        *u8_new_ptr = *u8_ptr;
+
+    my_free(ptr);
+    return new_ptr;
 }
 
 int main()
