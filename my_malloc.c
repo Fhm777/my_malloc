@@ -8,7 +8,6 @@
   TODO
   - best fit for finding required free chunks
   - using mmap for requesting memory
-  - test calloc, realloc implementation
   - thread safety
 */
 
@@ -149,10 +148,13 @@ void* my_calloc(size_t n, size_t elem_size)
     size_t size = n*elem_size;
     void* ptr = my_malloc(size);
 
-    for (unsigned char* u8_ptr = (unsigned char *)ptr;
+    unsigned char* u8_ptr = (unsigned char *)ptr;
+    for (;
          size > 0;
-         ++u8_ptr, --size)
-        *u8_ptr = 0;
+         --size)
+        *u8_ptr++ = 0;
+
+    ((struct chunk *)ptr - 1)->debug = 0x56785678;
 
     return ptr;
 }
@@ -177,7 +179,7 @@ void my_free(void* ptr)
     if (ptr == NULL) return;
 
     struct chunk* chunk_info = (struct chunk *)ptr - 1;
-    assert(!chunk_info->free && "Double free");
+    assert(!chunk_info->free && "Double free detected");
 
     if (chunk_info->next != NULL
         && chunk_info->next->free) {
@@ -196,17 +198,17 @@ void my_free(void* ptr)
 
 void* my_realloc(void* ptr, size_t size)
 {
+    struct chunk* old_chunk = (struct chunk *)ptr - 1;
+    assert(!old_chunk->free && "Tried to reallocate a free pointer");
+
     void* new_ptr = my_malloc(size);
 
-    struct chunk* old_chunk = (struct chunk *)ptr - 1;
-    size_t prev_size = old_chunk->size;
-
-    unsigned char* u8_ptr = ptr;
+    unsigned char* u8_ptr = (unsigned char *)ptr;
     unsigned char* u8_new_ptr = new_ptr;
-    for (unsigned char* u8_ptr = (unsigned char *)ptr;
+    for (size_t prev_size = old_chunk->size;
          prev_size > 0;
-         ++u8_ptr, ++new_ptr, --prev_size)
-        *u8_new_ptr = *u8_ptr;
+         --prev_size)
+        *u8_new_ptr++ = *u8_ptr++;
 
     my_free(ptr);
     return new_ptr;
@@ -214,14 +216,23 @@ void* my_realloc(void* ptr, size_t size)
 
 int main()
 {
-    void* ptr1 = my_malloc(1);
-    void* ptr2 = my_malloc(2);
-    void* ptr3 = my_malloc(3);
-    void* ptr4 = my_malloc(4);
-    void* ptr5 = my_malloc(5);
+    int n = 20;
+    my_malloc(sizeof(int)*n);
+    int* ptr1 = (int *)my_malloc(sizeof(int)*n);
+    my_malloc(sizeof(int)*n);
+    my_malloc(sizeof(int)*n);
 
-    my_free(ptr3);
-    my_free(ptr4);
+    for (size_t i=0; i<n; i++)
+        ptr1[i] = 0x12341234;
+
+    for (size_t i=0; i<n; i++)
+        printf("ptr1 %zu: 0x%x\n", i, ptr1[i]);
+
+    ++n;
+    ptr1 = (int *)my_realloc(ptr1, n*sizeof(int));
+    printf("\n");
+    for (size_t i=0; i<n; i++)
+        printf("ptr1 %zu: 0x%x\n", i, ptr1[i]);
 
     struct chunk* current = chunk_list_tail;
     while (current != NULL) {
